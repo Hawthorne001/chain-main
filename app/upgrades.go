@@ -1,95 +1,43 @@
 package app
 
 import (
+	"context"
 	"fmt"
+	"slices"
+	"time"
 
-	"github.com/cosmos/cosmos-sdk/baseapp"
+	sdkmath "cosmossdk.io/math"
+	storetypes "cosmossdk.io/store/types"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/cosmos/cosmos-sdk/codec"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
-	consensusparamtypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
-	crisistypes "github.com/cosmos/cosmos-sdk/x/crisis/types"
-	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
-	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
-	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
-	v6 "github.com/cosmos/ibc-go/v7/modules/apps/27-interchain-accounts/controller/migrations/v6"
-	icacontrollertypes "github.com/cosmos/ibc-go/v7/modules/apps/27-interchain-accounts/controller/types"
-	icahosttypes "github.com/cosmos/ibc-go/v7/modules/apps/27-interchain-accounts/host/types"
-	ibctransfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
-	clientkeeper "github.com/cosmos/ibc-go/v7/modules/core/02-client/keeper"
-	"github.com/cosmos/ibc-go/v7/modules/core/exported"
-	ibctmmigrations "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint/migrations"
-	icaauthmoduletypes "github.com/crypto-org-chain/chain-main/v4/x/icaauth/types"
 )
 
-func (app *ChainApp) RegisterUpgradeHandlers(cdc codec.BinaryCodec, clientKeeper clientkeeper.Keeper) {
-	planName := "v4.3.0"
-	// Set param key table for params module migration
-	for _, subspace := range app.ParamsKeeper.GetSubspaces() {
-		var keyTable paramstypes.KeyTable
-		switch subspace.Name() {
-		case minttypes.ModuleName:
-			keyTable = minttypes.ParamKeyTable() //nolint:staticcheck
-		case ibctransfertypes.ModuleName:
-			keyTable = ibctransfertypes.ParamKeyTable()
-		case icacontrollertypes.SubModuleName:
-			keyTable = icacontrollertypes.ParamKeyTable()
-		case stakingtypes.ModuleName:
-			keyTable = stakingtypes.ParamKeyTable()
-		case banktypes.ModuleName:
-			keyTable = banktypes.ParamKeyTable() //nolint:staticcheck
-		case distrtypes.ModuleName:
-			keyTable = distrtypes.ParamKeyTable() //nolint:staticcheck
-		case slashingtypes.ModuleName:
-			keyTable = slashingtypes.ParamKeyTable() //nolint:staticcheck
-		case govtypes.ModuleName:
-			keyTable = govv1.ParamKeyTable() //nolint:staticcheck
-		case icahosttypes.SubModuleName:
-			keyTable = icahosttypes.ParamKeyTable()
-		case icaauthmoduletypes.ModuleName:
-			keyTable = icaauthmoduletypes.ParamKeyTable()
-		case authtypes.ModuleName:
-			keyTable = authtypes.ParamKeyTable() //nolint:staticcheck
-		default:
-			continue
+func (app *ChainApp) RegisterUpgradeHandlers(cdc codec.BinaryCodec) {
+	planName := "v5.0"
+	app.UpgradeKeeper.SetUpgradeHandler(planName, func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+		m, err := app.ModuleManager.RunMigrations(ctx, app.configurator, fromVM)
+		if err != nil {
+			return m, err
 		}
-		if !subspace.HasKeyTable() {
-			subspace.WithKeyTable(keyTable)
+		sdkCtx := sdk.UnwrapSDKContext(ctx)
+		{
+			params := app.ICAHostKeeper.GetParams(sdkCtx)
+			msg := "/ibc.applications.interchain_accounts.host.v1.MsgModuleQuerySafe"
+			if !slices.ContainsFunc(params.AllowMessages, func(allowMsg string) bool {
+				return allowMsg == "*" || allowMsg == msg
+			}) {
+				params.AllowMessages = append(params.AllowMessages, msg)
+				app.ICAHostKeeper.SetParams(sdkCtx, params)
+			}
+			if err := UpdateExpeditedParams(ctx, app.GovKeeper); err != nil {
+				return m, err
+			}
 		}
-	}
-	baseAppLegacySS := app.ParamsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramstypes.ConsensusParamsKeyTable())
-	app.UpgradeKeeper.SetUpgradeHandler(planName, func(ctx sdk.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-		// OPTIONAL: prune expired tendermint consensus states to save storage space
-		if _, err := ibctmmigrations.PruneExpiredConsensusStates(ctx, cdc, clientKeeper); err != nil {
-			return nil, err
-		}
-		// explicitly update the IBC 02-client params, adding the localhost client type
-		params := clientKeeper.GetParams(ctx)
-		params.AllowedClients = append(params.AllowedClients, exported.Localhost)
-		clientKeeper.SetParams(ctx, params)
-		if err := v6.MigrateICS27ChannelCapability(
-			ctx,
-			cdc,
-			app.keys[capabilitytypes.ModuleName],
-			app.CapabilityKeeper,
-			icacontrollertypes.SubModuleName,
-		); err != nil {
-			return nil, err
-		}
-
-		// Migrate Tendermint consensus parameters from x/params module to a dedicated x/consensus module.
-		baseapp.MigrateParams(ctx, baseAppLegacySS, &app.ConsensusParamsKeeper)
-		ctx.Logger().Info("start to run module migrations...")
-		return app.mm.RunMigrations(ctx, app.configurator, fromVM)
+		return m, nil
 	})
 
 	upgradeInfo, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
@@ -98,12 +46,61 @@ func (app *ChainApp) RegisterUpgradeHandlers(cdc codec.BinaryCodec, clientKeeper
 	}
 	if upgradeInfo.Name == planName && !app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
 		storeUpgrades := storetypes.StoreUpgrades{
-			Added: []string{
-				consensusparamtypes.StoreKey,
-				crisistypes.StoreKey,
-			},
+			Deleted: []string{"icaauth"},
 		}
 		// configure store loader that checks if version == upgradeHeight and applies store upgrades
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
 	}
+}
+
+func UpdateExpeditedParams(ctx context.Context, gov govkeeper.Keeper) error {
+	govParams, err := gov.Params.Get(ctx)
+	if err != nil {
+		return err
+	}
+	if len(govParams.MinDeposit) > 0 {
+		minDeposit := govParams.MinDeposit[0]
+		expeditedAmount := minDeposit.Amount.MulRaw(govv1.DefaultMinExpeditedDepositTokensRatio)
+		govParams.ExpeditedMinDeposit = sdk.NewCoins(sdk.NewCoin(minDeposit.Denom, expeditedAmount))
+	}
+	threshold, err := sdkmath.LegacyNewDecFromStr(govParams.Threshold)
+	if err != nil {
+		return fmt.Errorf("invalid threshold string: %w", err)
+	}
+	expeditedThreshold, err := sdkmath.LegacyNewDecFromStr(govParams.ExpeditedThreshold)
+	if err != nil {
+		return fmt.Errorf("invalid expedited threshold string: %w", err)
+	}
+	if expeditedThreshold.LTE(threshold) {
+		expeditedThreshold = threshold.Mul(DefaultThresholdRatio())
+	}
+	if expeditedThreshold.GT(sdkmath.LegacyOneDec()) {
+		expeditedThreshold = sdkmath.LegacyOneDec()
+	}
+	govParams.ExpeditedThreshold = expeditedThreshold.String()
+	if govParams.ExpeditedVotingPeriod != nil && govParams.VotingPeriod != nil && *govParams.ExpeditedVotingPeriod >= *govParams.VotingPeriod {
+		votingPeriod := DurationToDec(*govParams.VotingPeriod)
+		period := DecToDuration(DefaultPeriodRatio().Mul(votingPeriod))
+		govParams.ExpeditedVotingPeriod = &period
+	}
+	if err := govParams.ValidateBasic(); err != nil {
+		return err
+	}
+	return gov.Params.Set(ctx, govParams)
+}
+
+func DefaultThresholdRatio() sdkmath.LegacyDec {
+	return govv1.DefaultExpeditedThreshold.Quo(govv1.DefaultThreshold)
+}
+
+func DefaultPeriodRatio() sdkmath.LegacyDec {
+	return DurationToDec(govv1.DefaultExpeditedPeriod).Quo(DurationToDec(govv1.DefaultPeriod))
+}
+
+func DurationToDec(d time.Duration) sdkmath.LegacyDec {
+	return sdkmath.LegacyMustNewDecFromStr(fmt.Sprintf("%f", d.Seconds()))
+}
+
+func DecToDuration(d sdkmath.LegacyDec) time.Duration {
+	return time.Second * time.Duration(d.RoundInt64())
 }

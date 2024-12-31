@@ -7,6 +7,10 @@ on:
       - master
       - release/**
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   codecov:
     name: codecov
@@ -16,7 +20,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: 1.22
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - id: changed-files
@@ -31,7 +35,7 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
 
       # - name: Upload coverage report
-      #   uses: codecov/codecov-action@v3
+      #   uses: codecov/codecov-action@v4
       #   with:
       #     token: ${{ secrets.CODECOV_TOKEN }}
       #     file: ./coverage.txt

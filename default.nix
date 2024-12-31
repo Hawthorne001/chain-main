@@ -38,8 +38,8 @@ let
 in
 buildGoApplication rec {
   pname = "chain-maind";
-  version = "v4.3.0";
-  go = buildPackages.go_1_22;
+  version = "v5.0.0";
+  go = buildPackages.go_1_23;
   src = lib.cleanSourceWith {
     name = "src";
     src = lib.sourceByRegex ./. src_regexes;
@@ -85,8 +85,8 @@ buildGoApplication rec {
 
   doCheck = false;
   meta = with lib; {
-    description = "Official implementation of the Crypto.org blockchain protocol";
-    homepage = "https://crypto.org/";
+    description = "Official implementation of the Cronos.org blockchain protocol";
+    homepage = "https://cronos.org/";
     license = licenses.asl20;
     mainProgram = "chain-maind" + stdenv.hostPlatform.extensions.executable;
     platforms = platforms.all;

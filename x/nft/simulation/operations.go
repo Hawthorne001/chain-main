@@ -1,5 +1,5 @@
 // Copyright (c) 2016-2021 Shanghai Bianjie AI Technology Inc. (licensed under the Apache License, Version 2.0)
-// Modifications Copyright (c) 2021-present Crypto.org (licensed under the Apache License, Version 2.0)
+// Modifications Copyright (c) 2021-present Cronos.org (licensed under the Apache License, Version 2.0)
 package simulation
 
 import (
@@ -33,28 +33,28 @@ func WeightedOperations(
 ) simulation.WeightedOperations {
 	var weightMint, weightEdit, weightBurn, weightTransfer int
 	appParams.GetOrGenerate(
-		cdc, OpWeightMsgMintNFT, &weightMint, nil,
+		OpWeightMsgMintNFT, &weightMint, nil,
 		func(_ *rand.Rand) {
 			weightMint = 100
 		},
 	)
 
 	appParams.GetOrGenerate(
-		cdc, OpWeightMsgEditNFT, &weightEdit, nil,
+		OpWeightMsgEditNFT, &weightEdit, nil,
 		func(_ *rand.Rand) {
 			weightEdit = 50
 		},
 	)
 
 	appParams.GetOrGenerate(
-		cdc, OpWeightMsgTransferNFT, &weightTransfer, nil,
+		OpWeightMsgTransferNFT, &weightTransfer, nil,
 		func(_ *rand.Rand) {
 			weightTransfer = 50
 		},
 	)
 
 	appParams.GetOrGenerate(
-		cdc, OpWeightMsgBurnNFT, &weightBurn, nil,
+		OpWeightMsgBurnNFT, &weightBurn, nil,
 		func(_ *rand.Rand) {
 			weightBurn = 10
 		},
@@ -114,7 +114,6 @@ func SimulateMsgTransferNFT(k keeper.Keeper, ak types.AccountKeeper, bk types.Ba
 			TxGen:           simappparams.MakeTestEncodingConfig().TxConfig,
 			Cdc:             nil,
 			Msg:             msg,
-			MsgType:         msg.Type(),
 			Context:         ctx,
 			SimAccount:      simAccount,
 			AccountKeeper:   ak,
@@ -163,7 +162,6 @@ func SimulateMsgEditNFT(k keeper.Keeper, ak types.AccountKeeper, bk types.BankKe
 			TxGen:           simappparams.MakeTestEncodingConfig().TxConfig,
 			Cdc:             nil,
 			Msg:             msg,
-			MsgType:         msg.Type(),
 			Context:         ctx,
 			SimAccount:      simAccount,
 			AccountKeeper:   ak,
@@ -213,7 +211,6 @@ func SimulateMsgMintNFT(k keeper.Keeper, ak types.AccountKeeper, bk types.BankKe
 			TxGen:           simappparams.MakeTestEncodingConfig().TxConfig,
 			Cdc:             nil,
 			Msg:             msg,
-			MsgType:         msg.Type(),
 			Context:         ctx,
 			SimAccount:      simAccount,
 			AccountKeeper:   ak,
@@ -255,7 +252,6 @@ func SimulateMsgBurnNFT(k keeper.Keeper, ak types.AccountKeeper, bk types.BankKe
 			TxGen:           simappparams.MakeTestEncodingConfig().TxConfig,
 			Cdc:             nil,
 			Msg:             msg,
-			MsgType:         msg.Type(),
 			Context:         ctx,
 			SimAccount:      simAccount,
 			AccountKeeper:   ak,

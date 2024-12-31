@@ -4,9 +4,16 @@ from pathlib import Path
 
 import pytest
 import requests
+from pystarport import cluster as c
 
-from .ibc_utils import search_target, wait_relayer_ready
-from .utils import cluster_fixture, wait_for_fn, wait_for_new_blocks
+from .ibc_utils import search_target, wait_for_check_channel_ready, wait_relayer_ready
+from .utils import (
+    approve_proposal,
+    cluster_fixture,
+    module_address,
+    wait_for_fn,
+    wait_for_new_blocks,
+)
 
 pytestmark = pytest.mark.ibc
 
@@ -19,24 +26,6 @@ def cluster(worker_index, pytestconfig, tmp_path_factory):
         worker_index,
         tmp_path_factory.mktemp("data"),
     )
-
-
-def wait_for_check_channel_ready(cli, connid, channel_id, target="STATE_OPEN"):
-    print("wait for channel ready", channel_id, target)
-
-    def check_channel_ready():
-        channels = cli.ibc_query_channels(connid)["channels"]
-        try:
-            state = next(
-                channel["state"]
-                for channel in channels
-                if channel["channel_id"] == channel_id
-            )
-        except StopIteration:
-            return False
-        return state == target
-
-    wait_for_fn("channel ready", check_channel_ready)
 
 
 def assert_channel_open_init(rsp):
@@ -99,28 +88,61 @@ def start_and_wait_relayer(cluster):
 def test_ica(cluster, tmp_path):
     controller_connection, host_connection = start_and_wait_relayer(cluster)
     # call chain-maind directly
-    cli_controller = cluster["ica-controller-1"].cosmos_cli()
+    controller = cluster["ica-controller-1"]
+    cli_controller = controller.cosmos_cli()
     cli_host = cluster["ica-host-1"].cosmos_cli()
 
-    addr_controller = cluster["ica-controller-1"].address("signer")
+    addr_controller = controller.address("signer")
     addr_host = cluster["ica-host-1"].address("signer")
 
     # create interchain account
-    rsp = cli_controller.icaauth_register_account(
+    v = json.dumps({"fee_version": "ics29-1", "app_version": ""})
+    rsp = cli_controller.ica_register_account(
         controller_connection,
         from_=addr_controller,
         gas="400000",
+        version=v,
+        ordering=c.ChannelOrder.ORDERED.value,
     )
-
     assert rsp["code"] == 0, rsp["raw_log"]
-    _, channel_id = assert_channel_open_init(rsp)
+    port_id, channel_id = assert_channel_open_init(rsp)
     wait_for_check_channel_ready(cli_controller, controller_connection, channel_id)
+
+    # upgrade to unordered channel
+    authority = module_address("gov")
+    channel = cli_controller.ibc_query_channel(port_id, channel_id)
+    deposit = "0.1cro"
+    version_data = json.loads(channel["channel"]["version"])
+    signer = "signer"
+    proposal_src = cli_controller.ibc_upgrade_channels(
+        json.loads(version_data["app_version"]),
+        signer,
+        deposit=deposit,
+        title="channel-upgrade-title",
+        summary="summary",
+        port_pattern=port_id,
+        channel_ids=channel_id,
+    )
+    proposal_src["deposit"] = deposit
+    proposal_src["messages"][0]["signer"] = authority
+    proposal_src["messages"][0]["fields"]["ordering"] = c.ChannelOrder.UNORDERED.value
+    proposal = tmp_path / "proposal.json"
+    proposal.write_text(json.dumps(proposal_src))
+    rsp = cli_controller.submit_gov_proposal(proposal, from_=signer)
+    assert rsp["code"] == 0, rsp["raw_log"]
+    approve_proposal(controller, rsp, msg=",/ibc.core.channel.v1.MsgChannelUpgradeInit")
+    wait_for_check_channel_ready(
+        cli_controller, controller_connection, channel_id, "STATE_FLUSHCOMPLETE"
+    )
+    wait_for_check_channel_ready(cli_controller, controller_connection, channel_id)
+    channel = cli_controller.ibc_query_channel(port_id, channel_id)
+    assert channel["channel"]["ordering"] == c.ChannelOrder.UNORDERED.value, channel
 
     # get interchain account address
     ica_address = cli_controller.ica_query_account(
         controller_connection,
         addr_controller,
-    )["interchainAccountAddress"]
+    )["address"]
     # initial balance of interchain account should be zero
     assert cli_host.balance(ica_address) == 0
 
@@ -130,25 +152,25 @@ def test_ica(cluster, tmp_path):
     # check if the funds are received in interchain account
     assert cli_host.balance(ica_address) == 100000000
 
-    def generated_tx_txt(amt):
-        # generate a transaction to send to host chain
-        generated_tx = tmp_path / "generated_tx.txt"
-        generated_tx_msg = cli_host.transfer(
-            ica_address, addr_host, f"{amt}cro", generate_only=True
-        )
-        print(json.dumps(generated_tx_msg))
-        with open(generated_tx, "w") as opened_file:
-            json.dump(generated_tx_msg, opened_file)
-        return generated_tx
+    def gen_send_msg(sender, receiver, denom, amount):
+        return {
+            "@type": "/cosmos.bank.v1beta1.MsgSend",
+            "from_address": sender,
+            "to_address": receiver,
+            "amount": [{"denom": denom, "amount": f"{amount}"}],
+        }
 
     no_timeout = 60
     num_txs = len(cli_host.query_all_txs(ica_address)["txs"])
 
     def submit_msgs(amt, timeout_in_s=no_timeout, gas="200000"):
+        # generate a transaction to send to host chain
+        data = json.dumps([gen_send_msg(ica_address, addr_host, "basecro", amt)])
+        packet = cli_controller.ica_generate_packet_data(data)
         # submit transaction on host chain on behalf of interchain account
-        rsp = cli_controller.icaauth_submit_tx(
+        rsp = cli_controller.ica_submit_tx(
             controller_connection,
-            generated_tx_txt(amt),
+            json.dumps(packet),
             timeout_duration=f"{timeout_in_s}s",
             gas=gas,
             from_=addr_controller,
@@ -158,12 +180,12 @@ def test_ica(cluster, tmp_path):
         wait_for_check_tx(cli_host, ica_address, num_txs, timeout)
         return rsp["height"]
 
-    submit_msgs(0.5)
+    submit_msgs(50000000)
     # check if the transaction is submitted
     assert len(cli_host.query_all_txs(ica_address)["txs"]) == num_txs + 1
     # check if the funds are reduced in interchain account
     assert cli_host.balance(ica_address) == 50000000
-    height = int(submit_msgs(10000000))
+    height = int(submit_msgs(1000000000000000))
 
     ev = None
     type = "ibccallbackerror-ics27_packet"

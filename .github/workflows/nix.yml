@@ -12,11 +12,15 @@ on:
 env:
   NIXPKGS_ALLOW_INSECURE: 1
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -33,7 +37,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -53,7 +57,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -61,7 +65,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files.tar.gz -C "${TMPDIR-/tmp}/pytest-of-runner" .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files
@@ -76,7 +80,7 @@ jobs:
         os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -95,7 +99,9 @@ jobs:
   test-upgrade:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Create more disk space
+        run: sudo rm -rf /usr/share/dotnet && sudo rm -rf /opt/ghc && sudo rm -rf "/usr/local/share/boost" && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -112,7 +118,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -120,7 +126,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_upgrade.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_upgrade
@@ -130,7 +136,7 @@ jobs:
   test-ledger:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -147,7 +153,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -155,7 +161,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_ledger.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_ledger
@@ -165,7 +171,7 @@ jobs:
   test-solomachine:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -182,7 +188,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -190,7 +196,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_solomachine.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_solomachine
@@ -200,7 +206,7 @@ jobs:
   test-slow:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -217,7 +223,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -225,7 +231,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_slow.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_slow
@@ -235,7 +241,7 @@ jobs:
   test-ibc:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -252,7 +258,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -260,7 +266,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_ibc.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_ibc
@@ -270,7 +276,7 @@ jobs:
   test-byzantine:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -287,7 +293,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -295,7 +301,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_byzantine.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_byzantine
@@ -305,7 +311,7 @@ jobs:
   test-gov:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -322,7 +328,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -330,7 +336,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_gov.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_gov
@@ -341,7 +347,7 @@ jobs:
   test-grpc:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: cachix/install-nix-action@v23
@@ -358,7 +364,7 @@ jobs:
            nix profile install nixpkgs#go_1_22
            go tool covdata textfmt -i=coverage -o profile.txt
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./profile.txt
@@ -366,7 +372,7 @@ jobs:
       - name: Tar debug files
         if: failure()
         run: tar cfz debug_files_grpc.tar.gz -C ${TMPDIR-/tmp}/pytest-of-runner .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: debug_files_grpc

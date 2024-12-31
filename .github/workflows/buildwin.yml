@@ -7,6 +7,11 @@ on:
     branches:
       - master
       - release/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build For Windows
@@ -17,7 +22,7 @@ jobs:
         with:
           go-version: 1.22
       - name: Normal check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
       - name: Set GOBIN
